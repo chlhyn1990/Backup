@@ -1,0 +1,108 @@
+docker images
+docker ps -a
+docker search centos:7
+docker pull centos:7
+docker run -it --name centos7 -v D:\docker:/var/www --privileged -p 80:80 -p 3306:3306 centos:7 sbin/init
+-- docker run -it --name web -v /kch:/var/www/html --privileged -p 80:80 -p 3306:3306 centos:7 sbin/init
+docker exec -it centos7 bin/bash
+/*In centos***************************************************************************************************************/
+yum grouplist
+grep . /etc/*-release
+rpm -qa *-release
+
+yum list httpd
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+systemctl status httpd
+
+yum install -y php php-cli php-common php-gd php-mbstring php-mysql php-odbc php-pdo php-xml php-xmlrpc
+yum list installed php*
+rpm -qa | grep php
+
+vi /etc/httpd/conf/httpd.conf
+
+<IfModule dir_module>
+    DirectoryIndex index.html index.php
+</IfModule>
+
+<IfModule mime_module>
+	AddType text/html .shtml
+	AddOutputFilter INCLUDES .shtml
+	AddType application/x-httpd-php .html .htm .php .inc
+	AddType application/x-httpd-php-source .phps
+</IfModule>
+
+vi /var/www/html/phpinfo.php
+<?php phpinfo(); ?>
+
+systemctl restart httpd
+localhost/phpinfo.php
+
+yum update
+yum install wget
+wget http://repo.mysql.com/mysql-community-release-el7-5.noarch.rpm
+rpm -ivh mysql-community-release-el7-5.noarch.rpm
+yum update
+yum repolist
+rpm -ql mysql-community-release-el7-5.noarch
+rpm -qi mysql-community-release-el7-5.noarch
+
+yum install -y mysql-server
+systemctl start mysqld
+systemctl enable mysqld
+systemctl status mysqld
+mysql_secure_installation
+mysql -uroot -p
+show variables like '%version%';
+grant all privileges on *.* to 'root'@'%' identified by '1120' with grant option; 
+flush privileges;
+select user, host, authentication_string from mysql.user;
+
+create database conda;
+use conda;
+create table user (user_id varchar(8), user_pw varchar(8));
+insert into user values ('conda', '1120');
+select * from user;
+vi var/www/html/dbconn.php
+<?php
+$db_host = "localhost";
+$db_user = "root";
+$db_passwd = "1120";
+$db_name = "conda";
+$conn= mysqli_connect($db_host, $db_user, $db_passwd, $db_name);
+
+if(mysqli_connect_errno($conn)){
+	echo "DB connect error:", mysqli_connect_errno();
+	echo "<br>";
+}else{
+	echo "연결완료!<br>";
+	
+	$sql = "select * from user";
+	$res = mysqli_query($conn, $sql);
+	for($i=0;$row=mysqli_fetch_array($res);$i++){
+		echo $row['user_id']." : ".$row['user_pw'];
+	}
+}
+?>
+
+localhost/dbconn.php
+ 
+firewall-cmd --zone=public --add-service=httpd --permanent
+firewall-cmd --zone=public --add-service=mysqld --permanent
+firewall-cmd --reload
+
+ctrl+p ctrl+q
+/*In centos***************************************************************************************************************/
+docker stop centos7
+docker start centos7
+docker inspect centos7
+
+docker rm centos7
+docker rmi centos:7
+
+docker build --rm=false -f DockerFile.txt -t web .
+
+systemctl list-units --type=service
+ps -ef | grep httpd
+netstat -ntlp | grep :80

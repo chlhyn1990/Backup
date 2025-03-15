@@ -1,0 +1,29 @@
+#VERSION 1.0
+
+FROM centos:7
+
+MAINTAINER cheolhyun Kim kikiiyy1120@gmail.com
+
+USER root
+
+WORKDIR /
+
+EXPOSE 80 3306
+
+RUN mkdir -p /var/www/html
+
+COPY history.txt /var/www/history.txt
+COPY DockerFile.txt /var/www
+COPY dbconn.php /var/www/html
+COPY phpinfo.php /var/www/html
+
+RUN  yum install -y httpd \
+&&  yum install -y php php-cli php-common php-gd php-mbstring php-mysql php-odbc php-pdo php-xml php-xmlrpc \
+&&  yum update -y\
+&&  yum install -y wget \
+&&  wget http://repo.mysql.com/mysql-community-release-el7-5.noarch.rpm \
+&&  rpm -ivh mysql-community-release-el7-5.noarch.rpm \
+&&  yum update -y \
+&&  yum install -y mysql-server
+
+#CMD ["/sbin/init"]

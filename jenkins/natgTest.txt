@@ -1,0 +1,272 @@
+node {
+    def lastDeployCommitId  // 지난번 최종 반영됐던 커밋 ID (lastDeployCommitId 파일에 저장되어 있음)
+    def nowDeployCommitId   // 현재 반영할 git HEAD 의 커밋 ID
+    def workDir = 'D:\\jenkins\\deploy\\' // 로컬 실제 파일이 배포될 경로
+    def libDir = 'sgerp.war\\WEB-INF\\lib' // 로컬 빌드 환경
+    def classesDir = 'D:\\jenkins\\build\\classes' // 로컬 빌드파일 경로
+    def logDir = 'D:\\jenkins\\log' // log dir
+    def target_server = 'jbossnatg@192.168.50.222'
+    def target_server_root = 'root@192.168.50.222'
+    def wasPath = '/oradata/jbossnatg/jboss6.1.0/server/NATGERP/deploy/sgerp.war/' //NATGERP를 wasList로 변경
+    //def wasList = ['natgerp1', 'natgerp2', 'natgpos1', 'natgpos2', 'natgint1', 'natgint2', 'natgwms1', 'natgwms2']
+    def wasList = ['natgerp1']
+    def wasBinPath = '/oradata/jbossnatg/jboss6.1.0/bin/NATGERP.sh' //NATGERP를 wasList로 변경
+    def username
+    def commitmsg
+  
+    // 1. 저장소 소스 가져오기
+    stage('소스 연결') {
+        // Get some code from a GitHub repository
+        // git 저장소에서 소스를 가져온다
+        git url: 'http://192.168.0.111/natgerp/natgerp.git', branch: 'develop', credentialsId: 'GITLAB_ROOT'
+    }
+
+    // 2. 기존 반영소스와 비교하여 변경점 찾기
+    stage('변경점 조회') {
+        // Check file exists
+        // 최종 반영됐던 커밋 ID를 보관하는 파일이 있는지 검사한다.
+        def existsFile = fileExists 'lastDeployCommitId'
+        if( existsFile ) {
+            lastDeployCommitId = (readFile(file: 'lastDeployCommitId', encoding: 'UTF-8')).trim()
+        } else {
+            lastDeployCommitId = powershell(script:'git rev-parse HEAD', returnStdout: true).trim()
+        }
+        
+        nowDeployCommitId = powershell(script:'git rev-parse HEAD', returnStdout: true).trim()
+        username = powershell(script:' git log -1 --pretty=format:"%an"', returnStdout: true).trim()
+        commitmsg = powershell(script:' git log -1 --pretty=format:"%s"', returnStdout: true).trim()
+        
+        println('최종커밋='+lastDeployCommitId)
+        println('현재커밋='+nowDeployCommitId)
+        
+        // Make file to modified file list
+        // 수정된 내용을 감지하여 파일로 저장한다.
+        bat(script: """
+            git diff --name-only --output=modifiedList --diff-filter=AM ${lastDeployCommitId}..${nowDeployCommitId}
+        """)
+        
+        // Make file to deleted file list
+        // 삭제된 내용을 감지하여 파일로 저장한다.
+        bat(script: """
+            git diff --name-only --output=deletedList --diff-filter=D ${lastDeployCommitId}..${nowDeployCommitId}
+        """)
+    }
+    
+    // 3. java파일은 빌드 및 배포폴더에 복사
+    stage('빌드&배포파일 복사') {
+        // Process modefied files
+        // 파일을 읽어 수정된 내용을 반영한다.
+        isModified = (readFile(file: 'modifiedList', encoding: 'UTF-8')).trim()
+        if(isModified) {
+            println("변경된 파일 존재")
+            dir("""${classesDir}""") {
+                withAnt(jdk: 'jdk1.6') {
+                    def lines = isModified.readLines()
+                   // 더존 배치 작업 서비스끼리 배포하기위한 예외처리
+                  //  bat(script: """
+                //                javac -d D:\\jenkins\\build\\classes -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;C:\\ProgramData\\Jenkins\\.jenkins\\workspace\\NATGERP_TEST\\sgerp.war\\WEB-INF\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; C:\\ProgramData\\Jenkins\\.jenkins\\workspace\\NATGERP_TEST\\sgerp.war\\WEB-INF\\src\\com\\schedule\\Schedule.java
+                 //               javac -d D:\\jenkins\\deploy\\ -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;C:\\ProgramData\\Jenkins\\.jenkins\\workspace\\NATGERP_TEST\\sgerp.war\\WEB-INF\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; C:\\ProgramData\\Jenkins\\.jenkins\\workspace\\NATGERP_TEST\\sgerp.war\\WEB-INF\\src\\com\\schedule\\Schedule.java 
+                  //      
+                //            """
+                 //           )
+                    
+                    for(line in lines) {
+                        line = line.replace('/', '\\')
+                        if(line.substring(line.length()-5) == '.java' && line.substring(line.length()-12) != 'Command.java' && line.substring(line.length()-12) != 'Service.java'){
+                            println("코어자바파일 빌드")
+                            bat(script: """
+                                javac -d ${classesDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\${line}
+                                javac -d ${workDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\${line}
+                            """
+                            )
+                        }
+                    }
+                    
+                    
+                    for(line in lines) {
+                        line = line.replace('/', '\\')
+                        println(line)
+                        
+                        if(line.length() > 12 && line.substring(line.length()-12) == 'Command.java'){
+                            println("자바파일 빌드")
+                            def service = line.replace('\\command\\', '\\service\\').replace('Command.java', 'Service.java')
+                            
+                            //emerge
+                             bat(script: """
+                                javac -d ${classesDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\sgerp.war\\WEB-INF\\src\\com\\erp\\service\\commonDS\\CommonDsService.java
+                                javac -d ${workDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\sgerp.war\\WEB-INF\\src\\com\\erp\\service\\commonDS\\CommonDsService.java
+                                javac -d ${classesDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\sgerp.war\\WEB-INF\\src\\com\\erp\\service\\fs\\dsdv\\Dsdv0010Service.java
+                                javac -d ${workDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\sgerp.war\\WEB-INF\\src\\com\\erp\\service\\fs\\dsdv\\Dsdv0010Service.java
+                            """
+                            )
+                            
+                            bat(script: """
+                                javac -d ${classesDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\${service}
+                                javac -d ${workDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\${service}
+                            """
+                            )
+                            bat(script: """
+                                javac -d ${classesDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\${line}
+                                javac -d ${workDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\${line}
+                            """
+                            )
+                            
+                        }
+                        else if(line.substring(line.length()-5) == '.java'){
+                            println("자바파일 빌드")
+                            bat(script: """
+                                javac -d ${classesDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\${line}
+                                javac -d ${workDir} -encoding UTF8 -cp D:\\NG_PROJECT\\bin\\jdk1.6\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\*;D:\\NG_PROJECT\\bin\\jdk1.6\\jre\\lib\\ext\\*;${env.WORKSPACE}\\${libDir}\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\common\\lib\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\server\\natgerp\\deployers\\resteasy.deployer\\*;D:\\NG_PROJECT\\bin\\jboss-6.1.0.Final\\client\\*; ${env.WORKSPACE}\\${line}
+                            """
+                            )
+                            
+                        }
+                        else{
+                            println('자바파일 아님')   
+                            bat(script: """
+                                echo f | xcopy /i /y "${env.WORKSPACE}\\${line}" "${workDir}${line}"
+                            """
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 4. 반영할 내용을 배포 경로에 반영한다.
+    stage('배포경로 반영') {
+        
+        // Process deleted files
+        // 파일을 읽어 삭제된 내용을 반영한다.
+        isDeleted = (readFile(file: 'deletedList', encoding: 'UTF-8')).trim()
+        if(isDeleted) {
+            println("삭제 반영 파일 존재")
+            def lines = isDeleted.readLines()
+            for(line in lines) {
+                def deployFile = line.replace('\\', '/').replace('sgerp.war/', '')
+                //println(line)
+                for(was in wasList){
+                    def wasName = wasPath.replace('NATGERP', was)
+                    if(line.substring(line.length()-5) == '.java'){
+                        def classDeployFileServer = deployFile.replace('src', 'classes').replace('.java', '.class')
+                        bat(script: """
+                                ssh ${target_server} "rm -vf ${wasName}/${classDeployFileServer}"
+                            """
+                        )
+                    }else{
+                        bat(script: """
+                                ssh ${target_server} "rm -vf ${wasName}/${deployFile}"
+                            """
+                        )
+                    }
+                }
+            }
+        } else {
+            println("삭제 반영 파일 미존재")
+        }
+        
+        // Process modefied files
+        // 파일을 읽어 수정된 내용을 반영한다.
+        isModified = (readFile(file: 'modifiedList', encoding: 'UTF-8')).trim()
+        if(isModified) {
+            println("변경 반영 파일 존재")
+            def lines = isModified.readLines()
+            for(line in lines) {
+                def deployFile = line.replace('\\', '/').replace('sgerp.war/', '')
+                def splitPath = deployFile.split("/")
+                def filename = splitPath[splitPath.length-1]
+                def exceptFilename = deployFile.replace(filename, '')
+
+                for(was in wasList){
+                    def wasName = wasPath.replace('NATGERP', was)
+                    if(line.substring(line.length()-5) == '.java'){
+                        def classDeployFile = deployFile.replace('WEB-INF/src/', '').replace('src', 'classes').replace('.java', '.class')
+                        def classDeployFileServer = deployFile.replace('src', 'classes').replace('.java', '.class')
+                        def classSplitPath = classDeployFileServer.split("/")
+                        def classFilename = classSplitPath[classSplitPath.length-1]
+                        def exceptClassFilename = classDeployFileServer.replace(classFilename, '')
+                        bat(script: """
+                                ssh ${target_server} "mkdir -p ${wasName}/${exceptClassFilename}"
+                                scp -r ${workDir}\\${classDeployFile} ${target_server}:${wasName}/${classDeployFileServer}
+                            """
+                        )
+                    }else{
+                        bat(script: """
+                                ssh ${target_server} "mkdir -p ${wasName}/${exceptFilename}"
+                                scp -r "${workDir}\\${line}" "${target_server}:${wasName}${deployFile}"
+                            """
+                        )
+                    }
+                }
+            }
+        } else {
+            println("변경 반영 파일 미존재")
+        }
+    }
+    
+    // 5. 최종 반영한 커밋 ID를 파일로 저장한다.
+    stage('커밋 최종값 입력') {
+        writeFile(file: 'lastDeployCommitId', text:nowDeployCommitId, encoding: 'UTF-8')
+            bat(script: """
+                rd /s /q ${workDir}
+                md ${workDir}
+            """
+            )
+    }
+    
+    // 6. restart was
+    stage('WAS 재시작') {
+        
+        // Process modefied files
+        // 파일을 읽어 수정된 내용을 반영한다.
+        isModified = (readFile(file: 'modifiedList', encoding: 'UTF-8')).trim()
+        if(isModified) {
+            println("WAS 재시작 필요")
+            
+            for(was in wasList){
+                def wasName = wasBinPath.replace('NATGERP', was)
+                def wasStopName = wasBinPath.replace('NATGERP', was+'stop')
+                bat(script: """
+                        ssh ${target_server_root} "su - jbossnatg -c ${wasStopName};su - jbossnatg -c ${wasName}"
+                    """
+                )
+            }
+            
+            
+            println("complete")
+        } else {
+            println("WAS 재시작 필요 없음")
+        }
+    }
+    
+    // 7. 로그 기록
+    stage('로그 기록') {
+        isDeleted = (readFile(file: 'deletedList', encoding: 'UTF-8')).trim()
+        if(isDeleted) {
+            def lines = isDeleted.readLines()
+            dir("""${logDir}""") {
+                for(line in lines) {
+                    bat(script: """
+                            echo ${nowDeployCommitId}, %date% %time%, ${username}, [DEL], ${line}, ${commitmsg} >> natgerp_develop.txt
+                        """
+                    )
+                }
+            }
+        }
+        isModified = (readFile(file: 'modifiedList', encoding: 'UTF-8')).trim()
+        if(isModified) {
+            def lines = isModified.readLines()
+            dir("""${logDir}""") {
+                for(line in lines) {
+                    bat(script: """
+                            echo ${nowDeployCommitId}, %date% %time%, ${username}, [MOD], ${line}, ${commitmsg} >> natgerp_develop.txt
+                        """
+                    )
+                }
+            }
+        }
+    }
+    
+    
+}
