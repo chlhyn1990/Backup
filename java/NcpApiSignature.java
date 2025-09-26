@@ -13,13 +13,12 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public class NcpAuth {
-	private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
-	
+
 	public static void main(String args[]) {
 		
 		Instant now = Instant.now();
 		//System.out.println("now:"+now + "\n");
-		String timestamp = String.valueOf(now.atZone(KOREA_ZONE).toInstant().toEpochMilli());
+		String timestamp = String.valueOf(now.toEpochMilli());
 		String startTime = getStartOfDay(now);
 		String endTime = getEndOfDay(now);
 		
@@ -28,6 +27,7 @@ public class NcpAuth {
 		String secretKey = "";
 		String serviceId = "";
 		String url = "/sms/v2/services/" + serviceId + "/unsubscribes?startTime="+startTime+"&endTime="+endTime;
+		//String url = "/sms/v2/services/" + serviceId + "/unsubscribes";
 		String fullUrl = "https://sens.apigw.ntruss.com" + url;
 		
 		String signature = null;
@@ -101,23 +101,23 @@ public class NcpAuth {
 	
 	// 하루의 시작 (00:00:00)
     public static String getStartOfDay(Instant now) {
-    	Instant startOfDay = now.atZone(KOREA_ZONE)
+    	Instant startOfDay = now.atZone(ZoneId.systemDefault())
 					                .toLocalDate()
-					                .atStartOfDay(KOREA_ZONE)
+					                .atStartOfDay(ZoneId.systemDefault()).plusHours(9L)
 					                .toInstant();
-    	//System.out.println("startOfDay:"+startOfDay.atZone(KOREA_ZONE).toLocalDateTime());
+    	System.out.println(startOfDay.atZone(ZoneId.systemDefault()).toLocalDateTime());
         return String.valueOf(startOfDay.toEpochMilli());
     }
     
     // 하루의 끝 (23:59:59.999999999)
     public static String getEndOfDay(Instant now) {
-    	Instant endOfDay = now.atZone(KOREA_ZONE)
+    	Instant endOfDay = now.atZone(ZoneId.systemDefault())
 						                .toLocalDate()
 						                .atTime(23, 59, 59, 999000000)
-						                .atZone(KOREA_ZONE)
+						                .atZone(ZoneId.systemDefault()).plusHours(9L)
 						                .toInstant();
-    	//System.out.println("endOfDay:"+endOfDay.atZone(KOREA_ZONE).toLocalDateTime());
-        return String.valueOf(endOfDay.toEpochMilli());
+    	System.out.println(endOfDay.atZone(ZoneId.systemDefault()).toLocalDateTime());
+        return String.valueOf(endOfDay. toEpochMilli());
     }
     
 }
