@@ -2,7 +2,7 @@
 
 FROM centos:7
 
-MAINTAINER cheolhyun Kim kikiiyy1120@gmail.com
+MAINTAINER cheolhyun Kim chlhyn1990@gmail.com
 
 USER root
 
@@ -27,3 +27,4 @@ RUN  yum install -y httpd \
 &&  yum install -y mysql-server
 
 #CMD ["/sbin/init"]
+
