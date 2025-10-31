@@ -1,0 +1,186 @@
+*docker
+
+1. 리눅스 환경 활성화, VirtualMachinePlatform 활성화 (powershell 관리자 실행)
+powershell> dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+powershell> dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+
+2. WSL2 설치 
+https://docs.microsoft.com/ko-kr/windows/wsl/install-win10#step-4---download-the-linux-kernel-update-package
+powershell> wsl --set-default-version 2
+
+3. 도커 설치 & 도커 실행
+-> https://www.docker.com/
+
+4. 방화벽 인바운드 80, 443, 22, 21, 20, 8080 열기
+
+5. 도커 이미지 다운 (cmd 관리자 실행)
+docker pull centos:7
+
+*jenkins
+
+1. 도커 실행
+docker run -itd --name jenkins -v D:\jenkins:/host --privileged --restart always -p 8888:8888 -p 2222:22 centos:7 sbin/init
+docker exec -it jenkins bin/bash
+
+2. 방화벽 설정
+yum install -y firewalld 
+systemctl enable firewalld
+systemctl start firewalld
+firewall-cmd --permanent --zone=public --add-port=8888/tcp
+firewall-cmd --permanent --zone=public --add-port=22/tcp
+firewall-cmd --reload
+
+3. ssh 설정
+yum install -y openssh-server.x86_64
+vi /etc/ssh/sshd_config -> PermitRootLogin yes 주석 삭제
+passwd root -> 비밀번호 설정
+systemctl enable sshd
+systemctl start sshd
+
+4. 기초 프로그램 설치
+yum update -y
+yum install -y which
+yum install -y java-11-openjdk.x86_64
+yum install -y java-11-openjdk-devel.x86_64
+yum install -y java-1.6.0-openjdk.x86_64
+yum install -y java-1.6.0-openjdk-devel.x86_64
+alternatives --config java 엔터 후 1 엔터(java11선택)
+readlink /usr/bin/javac -f -> 끝에 bin/javac 제외하고 복사(/usr/lib/jvm/java-11-openjdk-11.0.16.1.1-1.el7_9.x86_64)
+java --version
+javac -version
+둘 차이 나면 11로 수정
+unlink /etc/alternatives/javac
+ln -s /usr/lib/jvm/java-11-openjdk-11.0.16.1.1-1.el7_9.x86_64/bin/java /etc/alternatives/javac
+vi /etc/profile
+export JAVA_HOME = /usr/lib/jvm/java-11-openjdk-11.0.16.1.1-1.el7_9.x86_64 끝에 붙여넣기
+
+5. 젠킨스 설치
+yum install -y wget
+wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+yum install -y epel-release
+yum install -y jenkins
+yum install -y git
+timedatectl set-timezone Asia/Seoul
+vi /etc/sysconfig/jenkins JENKINS_PORT="8888"
+/usr/lib/systemd/system/jenkins.service Environment="JENKINS_PORT=8888"
+systemctl enable jenkins
+systemctl start jenkins
+cat /var/lib/jenkins/secrets/initialAdminPassword -> 초기 비밀번호 복붙 
+localhost:8080 접속해서 비밀번호 입력
+install suggested plugins
+admin 계정정보 입력
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+docker run -itd --name jenkins -v D:\jenkins:/host --privileged --restart always -p 8080:8080 -p 2222:22 centos:7 sbin/init
+docker exec -it jenkins bin/bash
+yum install -y firewalld 
+systemctl enable firewalld
+systemctl start firewalld
+firewall-cmd --permanent --zone=public --add-port=8080/tcp
+firewall-cmd --permanent --zone=public --add-port=22/tcp
+firewall-cmd --reload
+yum install -y openssh-server.x86_64
+systemctl enable sshd
+systemctl start sshd
+yum update -y
+yum install -y which
+yum install -y java-11-openjdk.x86_64
+yum install -y java-11-openjdk-devel.x86_64
+yum install -y java-1.6.0-openjdk.x86_64
+yum install -y java-1.6.0-openjdk-devel.x86_64
+yum install -y wget
+wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+yum install -y epel-release
+yum install -y jenkins
+timedatectl set-timezone Asia/Seoul
+systemctl enable jenkins
+systemctl start jenkins
+
+vi /etc/ssh/sshd_config -> PermitRootLogin yes 주석 삭제
+passwd root -> 비밀번호 설정
+readlink /usr/bin/javac -f -> 끝에 bin/javac 제외하고 복사(/usr/lib/jvm/java-11-openjdk-11.0.16.1.1-1.el7_9.x86_64)
+vi /etc/profile
+alternatives --config java 엔터 후 1 엔터(java11선택)
+export JAVA_HOME = /usr/lib/jvm/java-11-openjdk-11.0.16.1.1-1.el7_9.x86_64 끝에 붙여넣기
+java --version
+javac -version
+둘 차이 나면 11로 수정
+unlink /etc/alternatives/javac
+ln -s /usr/lib/jvm/java-11-openjdk-11.0.16.1.1-1.el7_9.x86_64/bin/java /etc/alternatives/javac
+cat /var/lib/jenkins/secrets/initialAdminPassword -> 초기 비밀번호 복붙 
+localhost:8080 접속해서 비밀번호 입력
+install suggested plugins
+admin 계정정보 입력
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+*gitlab 설치
+
+1. 도커 실행
+docker run -d --name gitlab -v D:\gitlab:/host --privileged --restart always -p 25:25 -p 80:80 -p 443:443 -p 22:22 -p 21:21 -p 20:20 centos:7 sbin/init
+docker exec -it gitlab bin/bash
+
+2. 방화벽 설정
+yum install -y firewalld 
+systemctl enable firewalld
+systemctl start firewalld
+firewall-cmd --permanent --zone=public --add-port=80/tcp
+firewall-cmd --permanent --zone=public --add-port=443/tcp
+firewall-cmd --permanent --zone=public --add-port=22/tcp
+firewall-cmd --permanent --zone=public --add-port=21/tcp
+firewall-cmd --permanent --zone=public --add-port=20/tcp
+firewall-cmd --permanent --zone=public --add-port=25/tcp
+firewall-cmd --reload
+
+3. ssh 설정
+yum install -y openssh-server.x86_64
+vi /etc/ssh/sshd_config -> PermitRootLogin yes 주석 삭제
+passwd root -> 비밀번호 설정
+systemctl enable sshd
+systemctl start sshd
+
+4. 기초 프로그램 설치
+yum update -y
+timedatectl set-timezone Asia/Seoul
+yum install -y which
+yum install -y curl policycoreutils-python
+
+5. 깃랩 설치
+yum install -y git
+curl -sS https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.rpm.sh | bash
+EXTERNAL_URL="127.0.0.1" yum install -y gitlab-ce
+cat /etc/gitlab/initial_root_password -> password 복사
+gitlab-ctl start
+root / 복사password 로그인
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+docker run -d --name gitlab -v D:\gitlab:/host --privileged --restart always -p 25:25 -p 80:80 -p 443:443 -p 22:22 -p 21:21 -p 20:20 centos:7 sbin/init
+docker exec -it gitlab bin/bash
+yum install -y firewalld 
+systemctl enable firewalld
+systemctl start firewalld
+firewall-cmd --permanent --zone=public --add-port=80/tcp
+firewall-cmd --permanent --zone=public --add-port=443/tcp
+firewall-cmd --permanent --zone=public --add-port=22/tcp
+firewall-cmd --permanent --zone=public --add-port=21/tcp
+firewall-cmd --permanent --zone=public --add-port=20/tcp
+firewall-cmd --permanent --zone=public --add-port=25/tcp
+firewall-cmd --reload
+yum install -y openssh-server.x86_64
+systemctl enable sshd
+systemctl start sshd
+yum update -y
+timedatectl set-timezone Asia/Seoul
+yum install -y which
+yum install -y curl policycoreutils-python
+yum install -y git
+curl -sS https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.rpm.sh | bash
+EXTERNAL_URL="127.0.0.1" yum install -y gitlab-ce
+
+vi /etc/ssh/sshd_config -> PermitRootLogin yes 주석 삭제
+passwd root -> 비밀번호 설정
+cat /etc/gitlab/initial_root_password -> password 복사
+gitlab-ctl start
+root / 복사password 로그인
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
